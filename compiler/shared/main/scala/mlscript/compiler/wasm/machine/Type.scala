@@ -17,6 +17,10 @@ class RecordObj(val fields: Ls[(String, Type)]):
   def getFieldOffset(name: String): Int =
     val index = fields.indexWhere { _._1 == name }
     RecordObj.tagSize + index * RecordObj.defaultFieldSize
+  
+  // ad hoc overload only for opaque record e.g. LetCall
+  def getFieldOffset(index: Int) : Int =
+    RecordObj.tagSize + index * RecordObj.defaultFieldSize
 
 
 object RecordObj:
@@ -25,7 +29,9 @@ object RecordObj:
   def from(classinfo: ClassInfo) =
     val fields = classinfo.fields.map { name => (name -> Type.defaultNumType)}
     RecordObj(fields)
-
+  def opaque(numFields: Int) =
+    val fields = List.range(0, numFields) map { index => (index.toString() -> Type.defaultNumType)}
+    RecordObj(fields)
 
 class VariantObj(val variants: Map[String, Option[Type.Record]]):
   def apply(name: String): Option[Option[Type.Record]] = variants.get(name)
@@ -74,4 +80,4 @@ enum Type:
 
 object Type:
   // TODO: GraphOptimizer does not support type 
-  final val defaultNumType = Int32
+  final val defaultNumType: Type = Int32

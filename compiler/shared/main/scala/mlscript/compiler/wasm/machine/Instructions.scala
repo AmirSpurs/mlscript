@@ -51,20 +51,20 @@ enum MachineInstr:
 
   // Control instructions
   case If_void
-      // Marks the beginning of an if-block (with implicit 'then').
+  // Marks the beginning of an if-block (with implicit 'then').
   case If_i32
-      // Marks the beginning of an if-block (with implicit 'then'). Must leave an i32 on the stack
+  // Marks the beginning of an if-block (with implicit 'then'). Must leave an i32 on the stack
   case Else
-      // Marks the end of the implicit 'then' of an if-block
+  // Marks the end of the implicit 'then' of an if-block
   case End
-      // Marks the end of an if-then-else or block
+  // Marks the end of an if-then-else or block
   case Loop(label: Str)
-      // A block of instructions with a label at the beginning
-  case Block(label: Str, args: Ls[Str])
-      // A block of instructions with a label at the end
-  case Br(label: Str)
-      // Jump to "label", which MUST be the label of an enclosing structure
-  case BrTable(layer: Int)
+  // A block of instructions with a label at the beginning
+  case Block(label: Str, results: Ls[Str])
+  // A block of instructions with a label at the end
+  case Br(label: Int)
+  // Jump to "label", which MUST be the label of an enclosing structure
+  case BrTable(labels: Ls[Int])
   case Call(name: Str)
   case Return
   case Unreachable // Always fails the program
@@ -140,8 +140,8 @@ enum MachineInstr:
       case Else             => "else" |> raw
       case Block(label, _)  => s"block $$$label" |> raw
       case Loop(label)      => s"loop $$$label" |> raw
-      case Br(label)        => s"br $$$label" |> raw
-      case BrTable(layer)   => s"br_table ${(layer to 0 by -1).mkString(" ")}" |> raw
+      case Br(label)        => s"br $label" |> raw
+      case BrTable(labels)   => s"br_table ${labels.mkString(" ")}" |> raw
       case Return           => "ret" |> raw
       case End              => "end" |> raw
       case Call(name)       => s"call $$$name" |> raw
