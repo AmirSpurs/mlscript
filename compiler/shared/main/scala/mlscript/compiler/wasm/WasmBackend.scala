@@ -165,7 +165,7 @@ class WasmBackend(
         val bindInstrs = resultNames flatMap { case Name(name) =>
                             Ls(SetLocal(name))
                           }
-        Call(calleeName) +: (bindInstrs ++ translateNodeRec(body, nestedBlocks))
+        Call(calleeName) +: (argsInstr ++ bindInstrs ++ translateNodeRec(body, nestedBlocks))
       
       // terminal form, may have nested node
       case Case(Name(struct), cases) =>
@@ -214,18 +214,20 @@ class WasmBackend(
   // translate GODef to a function.
   // after optimization, some join point will be lifted to a GODef,
   // but we should just treat it as a basic block
-  def translateGODefs(godef: GODef): Either[MachineFunction, Ls[MachineInstr]] =
-    locals.clear()
+  def translateGODefs(godef: GODef): Either[MachineFunction, JoinPoint] =
     val name = godef.name
-    val paramsType = godef.params map { case Name(param) => param -> MachineType.defaultNumType}
-    val localsType = locals.toList map {local => local -> MachineType.defaultNumType}
-    val retType = MachineType.defaultNumType
-    lazy val body = translateNode(godef.body)
     
     if godef.isjp then
-      joinPoints += name -> JoinPoint(godef.params, godef.body)
-      Right(body)
+      val jp = JoinPoint(godef.params, godef.body)
+      joinPoints += name -> jp
+      Right(jp)
     else 
+      locals.clear()
+      val body = translateNode(godef.body)
+      val paramsType = godef.params map { case Name(param) => param -> MachineType.defaultNumType}
+      // local info collect when codegen
+      val localsType = locals.toList map {local => local -> MachineType.defaultNumType}
+      val retType = MachineType.defaultNumType
       Left(
         MachineFunction(
           name,
@@ -237,7 +239,16 @@ class WasmBackend(
 
   // entry of lowering graph ir to wasm module
   def translate(goprog: GOProgram): Module =
-    val functions = goprog.defs.toList collect {godef =>
+    val main = GODef(
+      -1, // invalid id
+      "main",
+      false,
+      Ls(),
+      1, // return only one value (may be pointer)
+      goprog.main
+    )
+    val defn = goprog.defs.toList :+ main
+    val functions = defn collect {godef =>
       translateGODefs(godef) match
         case Left(function) => function
     }
@@ -246,7 +257,7 @@ class WasmBackend(
     wasm.Module(
       "",
       List(), // empty imports
-      functions
+      functions 
     )
 
   // We treat Wasm memory as a linear memory pool,
