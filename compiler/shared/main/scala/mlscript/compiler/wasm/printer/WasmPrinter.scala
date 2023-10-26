@@ -19,14 +19,8 @@ object WasmPrinter:
     ")" |> raw
   )
 
-  def mkImport(s: String): Document = s match
-    case "log" =>
-      stack(
-          "(func $logI32 (import \"system\" \"logI32\") (param i32 i32))" |> raw,
-          "(func $logI64 (import \"system\" \"logI64\") (param i64))" |> raw,
-          "(func $logF64 (import \"system\" \"logF64\") (param f64))" |> raw,
-        )
-    case _ => raw("(import") <:> raw(s) <#>  raw(")")
+  def mkImport(s: String): Document =
+    raw("(import") <:> raw(s) <#>  raw(")")
 
   def mkFunction(function: MachineFunction): Document =
     val name = function.name
@@ -35,20 +29,19 @@ object WasmPrinter:
        else "" |> raw
     val paramsDoc = line(
       function.args.toList map { case (name, typ) =>
-        s"(param $$${name} $typ) " |> raw}
+        s"(param $$${name} $typ)" |> raw}
       )
-    val resultDoc = s"(result $function.retType)" |> raw
-    val localsDoc = indent(
-      stack(
+    val resultDoc = s"(result ${function.retType})" |> raw
+    val localsDoc = stack(
         (function.locals map { case (name, typ) =>
             s"(local $$$name $typ)" |> raw
         }).toList
       )
-    )
 
     stack(
       raw(s"(func $$${name}") <:> paramsDoc <:> resultDoc, 
-      indent(stack(localsDoc :: mkInstrLists(function.instrs))),
+      indent(localsDoc),
+      indent(stack(mkInstrLists(function.instrs))),
       ")" |> raw,
       exportDoc
     )
@@ -62,7 +55,10 @@ object WasmPrinter:
               indent(stack(mkInstrLists(ts)))
             )
         case End =>
-            List(mkInstruction(instr))
+            List(unindent(stack(
+              mkInstruction(instr)
+              +: mkInstrLists(ts)))
+            )
         case If_void | If_i32 | Block(_, _) | Loop(_) =>
           List(
             mkInstruction(instr),
@@ -74,5 +70,9 @@ object WasmPrinter:
 
   private def mkInstruction(instr: MachineInstr): Document = 
     instr.toDocument
+  
+  def apply(module: Module) = mkModule(module).print
+  def apply(function: MachineFunction) = mkFunction(function).print
+  def apply(instr: MachineInstr) = mkInstruction(instr).print
 
 end WasmPrinter
