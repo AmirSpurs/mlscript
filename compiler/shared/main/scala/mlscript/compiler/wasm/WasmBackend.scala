@@ -38,6 +38,56 @@ class WasmBackend(
       // store args in a local variable
       rhs |> translateNode
 
+    // TODO: possible inlining optimization
+    private def inlineArgs(args: Ls[TrivialExpr]) =
+      val numParams = params.size
+      val paramNames = params.map(param => param.str).zip(List.range(0, numParams)).toSet
+      rhs |> inlineNodeRec
+
+      def inlineRefName(name: Name): Name =
+        val str = name.str
+        paramNames.collectFirst {
+          case (paramName, index) if str.equals(paramName) =>
+            args(index) match
+              case Ref(Name(argName)) => Name(argName)
+              case _ => throw WasmBackendError(s"try to inline a left value ref ${paramName}")
+        } getOrElse(name)
+      
+      def inlineTrivialExpr(expr: TrivialExpr): TrivialExpr = expr match
+        case Ref(Name(name)) =>
+          paramNames.collectFirst {
+            case (paramName, index) if name.equals(paramName) =>
+              args(index)
+          } getOrElse(expr)
+        case _ => expr
+      
+      def inlineExpr(expr: GOExpr): GOExpr = expr match
+        // very hacky and dangerous, I have to admit
+        case s: TrivialExpr => inlineTrivialExpr(s).asInstanceOf[GOExpr]
+        case CtorApp(cls, args) =>
+          CtorApp(cls, args map inlineTrivialExpr)
+        case Select(name, cls, field) =>
+          Select(inlineRefName(name), cls, field)
+        case BasicOp(op, args) =>
+          BasicOp(op, args map inlineTrivialExpr)
+        case _ => expr
+
+      def inlineNodeRec(node: Node): Node = node match
+        case Result(res) =>
+          Result(res map inlineTrivialExpr)
+        case Jump(joinName, args) =>
+          Jump(joinName, args map inlineTrivialExpr)
+        case Case(struct, cases) =>
+          Case(inlineRefName(struct), cases map {
+            case (cls, node) => (cls, node |> inlineNodeRec)
+          })
+        case LetExpr(name, expr, body) =>
+          LetExpr(name, expr |> inlineExpr, body |> inlineNodeRec)
+        case LetJoin(joinName, params, rhs, body) =>
+          // join point should not ref outside the params
+          LetJoin(joinName, params map inlineRefName, rhs, body |> inlineNodeRec)
+        case LetCall(resultNames, defn, args, body) =>
+          LetCall(resultNames, defn, args map inlineTrivialExpr, body |> inlineNodeRec)
 
   val functionMap: MutMap[Str, MachineFunction] = MutMap()
   val joinPoints: MutMap[Str, JoinPoint] = MutMap()
