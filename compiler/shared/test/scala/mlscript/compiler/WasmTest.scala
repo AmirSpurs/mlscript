@@ -9,6 +9,7 @@ import mlscript.compiler.debug.TreeDebug
 import mlscript.compiler.mono.Monomorph
 import mlscript.compiler.printer.ExprPrinter
 import mlscript.compiler.mono.MonomorphError
+import mlscript.compiler.wasm.WasmInterp
 
 class WasmDiffTestCompiler extends DiffTests {
   import WasmDiffTestCompiler.*
@@ -31,12 +32,19 @@ class WasmDiffTestCompiler extends DiffTests {
       val wasmModule = wasmBackend.translate(graph)
       outputBuilder ++= wasm.WasmPrinter(wasmModule)
 
+      val wasmInterpStdout = WasmInterp.check(wasmModule)
+      outputBuilder ++= "\nWasm Interpreter Output:\n"
+      outputBuilder ++= wasmInterpStdout
+
     catch
       case err @ GraphOptimizingError(msg) =>
         outputBuilder ++= s"GraphOpt failed: ${msg}"
         outputBuilder ++= "\n" ++ err.getStackTrace().map(_.toString()).mkString("\n")
       case err @ wasm.WasmBackendError(msg) =>
         outputBuilder ++= s"WasmBackend failed: ${msg}"
+        outputBuilder ++= "\n" ++ err.getStackTrace().map(_.toString()).mkString("\n")
+      case err =>
+        outputBuilder ++= "Unknown error:"
         outputBuilder ++= "\n" ++ err.getStackTrace().map(_.toString()).mkString("\n")
       case NonFatal(err) =>
         outputBuilder ++= "Lifting failed: " ++ err.toString()
