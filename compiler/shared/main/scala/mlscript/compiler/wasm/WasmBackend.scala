@@ -108,21 +108,13 @@ class WasmBackend(
   def translateExpr(expr: GOExpr): Ls[MachineInstr] = expr match
     case s: TrivialExpr => translateTrivialExpr(s)
     case CtorApp(cls, args) =>
-      // for ctorApp, we just leave a trace of field values on stack (reverse order)
-      val fieldsValues: ListBuffer[MachineInstr] = ListBuffer()
-      args.zip(cls.fields) foreach {
-        (arg, field) => 
-          fieldsValues ++= translateTrivialExpr(arg)
-          fieldsValues += Comment(s"field ${field}")
-      }
-      fieldsValues += I32Const(cls.id)
-      fieldsValues.toList
+      throw WasmBackendError(s"unexpected CtorApp handling for ${expr}")
     case Select(Name(refName), cls, field) =>
       val recordAux = RecordObj.from(cls)
       val offset = recordAux.getFieldOffset(field)
       Ls(GetLocal(refName), I32Const(offset), I32Add, I32Load)
     case BasicOp(operator, args) =>
-      val argsInstr = args flatMap {arg => translateTrivialExprUnbox(arg)}
+      val argsInstr = args flatMap {arg => translateTrivialExpr(arg)}
       val opInstr = operator match
         case op if op.equals("+") => I32Add
         case op if op.equals("-") => I32Sub
@@ -145,17 +137,16 @@ class WasmBackend(
         joinPoints += name -> jp
         // wrap with a block
         val buffer = ListBuffer.from(translateNodeRec(body, nestedBlocks))
-        Block(s"join_point@${name}", Ls()) +=: buffer
 
+        // Wasm requires offer block type, so we give up wrap join point with block temporarily
         buffer += Comment(s"join point ${name}(${params.map{ x => x.toString() }.mkString(",")})" )
         buffer ++= jp()
-        buffer += End
         buffer.toList
 
       case LetCall(resultNames, defnRef, args, body) =>
         locals ++= resultNames.map(resultName => resultName.str)
         // leftmost param in the bottom
-        val argsInstr = args.reverse flatMap {arg => translateTrivialExpr(arg)}
+        val argsInstr = args flatMap {arg => translateTrivialExpr(arg)}
         val calleeName = defnRef.getName
         val numResultFields = resultNames.size
         val recordAux = RecordObj.opaque(numResultFields)
@@ -164,7 +155,7 @@ class WasmBackend(
         val bindInstrs = resultNames.reverse flatMap { case Name(name) =>
                             Ls(SetLocal(name))
                           }
-        Call(calleeName) +: (argsInstr ++ bindInstrs ++ translateNodeRec(body, nestedBlocks))
+        (argsInstr :+ Call(calleeName)) ++ (bindInstrs ++ translateNodeRec(body, nestedBlocks))
       
       // terminal form, may have nested node
       case Case(Name(struct), cases) =>
@@ -176,7 +167,8 @@ class WasmBackend(
         if List.range(minId, maxId + 1).toSet equals caseIds.toSet then
           val brTable = caseIds map {_ - minId}
           val dispatchInstrs = Ls(Block(s"case_${struct}", Ls()),
-                                  GetLocal(struct), 
+                                  GetLocal(struct),
+                                  I32Load,
                                   I32Const(minId), 
                                   I32Sub, 
                                   BrTable(brTable),
@@ -203,6 +195,7 @@ class WasmBackend(
         val joinName = defnRef.getName
         val joinPoint = joinPoints.getOrElse(joinName, 
                                              throw WasmBackendError(s"join point ${joinName} not found"))
+        locals ++= joinPoint.params.map { paramName => paramName.str }
         joinPoint.passArgs(args) :+ Br(nestedBlocks)
         
       case Result(res) =>
@@ -228,7 +221,7 @@ class WasmBackend(
       val paramsType = godef.params map { case Name(param) => param -> MachineType.defaultNumType}
       // local info collect when codegen
       val localsType = locals.toList map {local => local -> MachineType.defaultNumType}
-      val retType = MachineType.defaultNumType
+      val retType = List.fill(godef.resultNum)(MachineType.defaultNumType)
       Left(
         MachineFunction(
           name,
@@ -239,7 +232,7 @@ class WasmBackend(
         )
 
   // entry of lowering graph ir to wasm module
-  def translate(goprog: GOProgram): Module =
+  def translate(goprog: GOProgram, moduleName: Str): Module =
     val main = GODef(
       -1, // invalid id
       "main",
@@ -256,7 +249,7 @@ class WasmBackend(
 
     // name `Module` shadows Module in java.lang
     wasm.Module(
-      "",
+      moduleName,
       List(), // empty imports
       functions
     )
@@ -266,32 +259,34 @@ class WasmBackend(
   def allocate(bindName: Str, rhs: GOExpr): Ls[MachineInstr] =
     // Debug only
     val ctorInstrs: ListBuffer[MachineInstr] = ListBuffer()
-    val objSize = rhs match
-      case CtorApp(cls, _) => RecordObj.from(cls).size
-      case _ => MachineType.defaultNumType.size 
-
-    ctorInstrs ++= Ls(GetGlobal(0), SetLocal(bindName))
-    ctorInstrs ++= Ls(GetGlobal(0), I32Const(objSize), I32Add, SetGlobal(0))
-    ctorInstrs += Comment(s"allocate ${objSize} bytes for ${bindName}")
     // store expr values into linear memory
     rhs match
-      case CtorApp(cls, _) =>
-        ctorInstrs ++= translateExpr(rhs)
-        ctorInstrs ++= Ls(GetLocal(bindName), I32Store)
-        // store fields
+      case CtorApp(cls, args) =>
         val recordAux = RecordObj.from(cls)
-        cls.fields foreach { fieldName =>
+        val objSize = recordAux.size
+        ctorInstrs ++= Ls(GetGlobal(0), SetLocal(bindName))
+        ctorInstrs ++= Ls(GetGlobal(0), I32Const(objSize), I32Add, SetGlobal(0))
+        ctorInstrs += Comment(s"allocate ${objSize} bytes for ${bindName}")
+        // class id
+        ctorInstrs ++= Ls(GetLocal(bindName), I32Const(cls.id), I32Store)
+        // store fields
+        args.zip(cls.fields) foreach { case(arg, fieldName) =>
           ctorInstrs ++= Ls(
-            GetLocal(fieldName),
+            GetLocal(bindName),
             I32Const(recordAux.getFieldOffset(fieldName)),
             I32Add,
-            I32Store
+          )
+          ctorInstrs ++= translateTrivialExpr(arg)
+          ctorInstrs ++= Ls(
+            I32Store,
+            Comment(s"field ${fieldName}")
           )
         }
         ctorInstrs += Comment(s"CtorApp ${cls.ident}")
       case _ =>
         ctorInstrs ++= translateExpr(rhs)
-        ctorInstrs ++= Ls(GetLocal(bindName), I32Store)
+        ctorInstrs += SetLocal(bindName)
+        ctorInstrs += Comment(s"bind variable ${bindName}")
 
     ctorInstrs.toList
  

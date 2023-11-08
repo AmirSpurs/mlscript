@@ -11,7 +11,8 @@ object WasmPrinter:
   def mkModule(mod: Module): Document = stack(
     "(module " |> raw,
     indent(stack(
-      "(memory (export \"mem\") 1)" |> raw,
+      // some test case `out of bounds memory access` if only 1 page
+      "(memory (export \"mem\") 100)" |> raw,
       stack(mod.imports map mkImport),
       "(global (mut i32) i32.const 0) " |> raw,
       stack(mod.functions map mkFunction)
@@ -31,7 +32,10 @@ object WasmPrinter:
       function.args.toList map { case (name, typ) =>
         s"(param $$${name} $typ)" |> raw}
       )
-    val resultDoc = s"(result ${function.retType})" |> raw
+    val resultDoc = line(
+      function.retType map { typ =>
+        s"(result ${typ})" |> raw}
+    )
     val localsDoc = stack(
         (function.locals map { case (name, typ) =>
             s"(local $$$name $typ)" |> raw

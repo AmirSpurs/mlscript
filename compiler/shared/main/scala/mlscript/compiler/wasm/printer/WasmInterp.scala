@@ -33,7 +33,7 @@ object WasmInterp:
 
   // check the wasm module by `wasmtime` and return the output from stdin
   def check(module: Module): String =
-    def pathWithExt(ext: String): Path = Env.tmpDir / "${nameWithExt(ext)}"
+    def pathWithExt(ext: String): Path = Env.tmpDir / s"${nameWithExt(ext)}"
     def nameWithExt(ext: String): String = s"${module.name}.$ext"
 
     val (local, sys) =
@@ -46,9 +46,9 @@ object WasmInterp:
     val wasmPath = pathWithExt("wasm")
     val watPath = pathWithExt("wat")
 
-    val w2wOptions = s"${pathWithExt("wat")} -o ${pathWithExt("wasm")}"
+    val w2wOptions = s"${watPath} -o ${wasmPath}"
 
-    module.writeWasmText(pathWithExt("wat"))
+    module.writeWasmText(watPath)
 
     // wat2wasm
     try {
@@ -62,35 +62,36 @@ object WasmInterp:
       }
     } catch {
       case _: IOException =>
-        throw CodeGenError(
+        throw WasmBackendError(
           "wat2wasm utility was not found under ./bin or in system path, " +
             "or did not have permission to execute"
         )
-      case _: RuntimeException =>
-        throw CodeGenError(
-          s"wat2wasm failed to translate WebAssembly text file ${pathWithExt("wat")} to binary"
+      case _ =>
+        throw WasmBackendError(
+          s"wat2wasm failed to translate WebAssembly text file ${watPath} to binary"
         )
     }
 
     // wasmtime check
     // ad hoc code, manually invoke main function
-    val wasmtimeCommand = s"wasmtime run ${pathWithExt("wasm")} --invoke main"
-    val stdinOutput = StringBuilder()
+    val wasmtimeCommand = s"wasmtime run --invoke main ${wasmPath}"
+    val stdoutOutput = StringBuilder()
     try {
-      stdinOutput ++= wasmtimeCommand.!!
+      stdoutOutput ++= wasmtimeCommand.!!
     } catch {
-      case _: RuntimeException =>
-        throw CodeGenError(
-          s"wasmtime failed to run the wasm module ${pathWithExt("wasm")}!"
+      case _: Exception =>
+        throw WasmBackendError(
+          s"wasmtime failed to run the wasm module ${wasmPath}!"
         )
     } finally {
       // remove temporary wat and wasm file
       if os.exists(watPath) then
-        os.remove(pathWithExt("wat"))
+        os.remove(watPath)
       if os.exists(wasmPath) then
-        os.remove(pathWithExt("wasm"))
+        os.remove(wasmPath)
     }
 
-    stdinOutput.toString()
+
+    stdoutOutput.toString()
 end WasmInterp
 

@@ -29,11 +29,11 @@ class WasmDiffTestCompiler extends DiffTests {
       outputBuilder ++= graph.toString()
       outputBuilder ++= "\n\nWasmBackend:\n"
       val wasmBackend = wasm.WasmBackend()
-      val wasmModule = wasmBackend.translate(graph)
+      val wasmModule = wasmBackend.translate(graph, testName)
       outputBuilder ++= wasm.WasmPrinter(wasmModule)
 
       val wasmInterpStdout = WasmInterp.check(wasmModule)
-      outputBuilder ++= "\nWasm Interpreter Output:\n"
+      outputBuilder ++= "\n\nWasm Interpreter Output:\n"
       outputBuilder ++= wasmInterpStdout
 
     catch
