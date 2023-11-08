@@ -113,7 +113,7 @@ class WasmBackend(
       args.zip(cls.fields) foreach {
         (arg, field) => 
           fieldsValues ++= translateTrivialExpr(arg)
-          fieldsValues += Comment(s"${field}")
+          fieldsValues += Comment(s"field ${field}")
       }
       fieldsValues += I32Const(cls.id)
       fieldsValues.toList
@@ -135,7 +135,6 @@ class WasmBackend(
  
   def translateNode(node: Node): Ls[MachineInstr] =
     def translateNodeRec(node: Node, nestedBlocks: Int): Ls[MachineInstr] = node match
-      case _ if nestedBlocks > 100 => throw WasmBackendError("too deep rec")
       case LetExpr(Name(name), expr, body) =>
         locals += name
         val exprInstr = allocate(name, expr)
@@ -155,14 +154,14 @@ class WasmBackend(
 
       case LetCall(resultNames, defnRef, args, body) =>
         locals ++= resultNames.map(resultName => resultName.str)
-        val argsInstr = args flatMap {arg => translateTrivialExpr(arg)}
-        val calleeName = defnRef.getName()
+        // leftmost param in the bottom
+        val argsInstr = args.reverse flatMap {arg => translateTrivialExpr(arg)}
+        val calleeName = defnRef.getName
         val numResultFields = resultNames.size
         val recordAux = RecordObj.opaque(numResultFields)
         
-        // TODO: handle multivalue function result
-        // We assume only one return value temporarily
-        val bindInstrs = resultNames flatMap { case Name(name) =>
+        // left most result in the bottom
+        val bindInstrs = resultNames.reverse flatMap { case Name(name) =>
                             Ls(SetLocal(name))
                           }
         Call(calleeName) +: (argsInstr ++ bindInstrs ++ translateNodeRec(body, nestedBlocks))
@@ -186,7 +185,8 @@ class WasmBackend(
           
           cases.zip(List.range(0, numArms)).foldLeft(dispatchInstrs) {
             case (instrs, ((cls, armNode), index) ) =>
-              val depth = nestedBlocks - index
+              // depth show number of blocks outside current arm (excluding self)
+              val depth = nestedBlocks + (numArms - index) - 1
               val armInstrs = translateNodeRec(armNode, depth)
             
               // construct a new block for a arm:
@@ -194,12 +194,13 @@ class WasmBackend(
               //  (block ...)
               //  instr*  
               // )
-              Block(s"match_${depth}", Ls()) +: (instrs ++ armInstrs) :+ End
+              Block(s"match_${index}", Ls()) +: (instrs ++ armInstrs) :+ End
           }
         else 
           throw WasmBackendError("not implemented cases dispatch")
       // terminal forms, no body
-      case Jump(Name(joinName), args) =>
+      case Jump(defnRef, args) =>
+        val joinName = defnRef.getName
         val joinPoint = joinPoints.getOrElse(joinName, 
                                              throw WasmBackendError(s"join point ${joinName} not found"))
         joinPoint.passArgs(args) :+ Br(nestedBlocks)
@@ -257,7 +258,7 @@ class WasmBackend(
     wasm.Module(
       "",
       List(), // empty imports
-      functions 
+      functions
     )
 
   // We treat Wasm memory as a linear memory pool,
@@ -277,7 +278,7 @@ class WasmBackend(
       case CtorApp(cls, _) =>
         ctorInstrs ++= translateExpr(rhs)
         ctorInstrs ++= Ls(GetLocal(bindName), I32Store)
-        // store id and fields
+        // store fields
         val recordAux = RecordObj.from(cls)
         cls.fields foreach { fieldName =>
           ctorInstrs ++= Ls(
