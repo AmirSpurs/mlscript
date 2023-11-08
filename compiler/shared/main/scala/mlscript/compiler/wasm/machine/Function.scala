@@ -12,7 +12,7 @@ class MachineFunction (
     val name: String,
     val args: Ls[(String, Type)],
     val locals: Ls[(String, Type)],
-    val retType: Type,
+    val retType: Ls[Type],
     val instrs: Ls[MachineInstr],
     val visibility: Bool = true
 ):
