@@ -124,6 +124,7 @@ class WasmBackend(
       goprog.main
     )
     this.fDefCtx = this.fDefCtx.updated(-1, main)
+    RecordObj.clearCache()
 
   protected def translateTrivialExprUnbox(expr: TrivialExpr) = expr match
     case Ref(Name(name)) => Ls(GetLocal(name), I32Load)
@@ -141,10 +142,27 @@ class WasmBackend(
     case s: TrivialExpr => translateTrivialExpr(s)
     case CtorApp(cls, args) =>
       throw WasmBackendError(s"unexpected CtorApp handling for ${expr}")
-    case Select(Name(refName), cls, field) =>
+    case Select(Name(refName), scls, field) =>
+      // ad hoc, as select method is built before getClassInfoUniverse
+      val cls = clsctx(scls.ident)
       val recordAux = RecordObj.from(clsctx, cls)
       val offset = recordAux.getFieldOffset(field)
       Ls(GetLocal(refName), I32Const(offset), I32Add, I32Load)
+    case SelectMember(Name(refName), scls, member, args) =>
+      val cls = clsctx(scls.ident)
+      val layoutAux = RecordObj.from(clsctx, cls)
+      layoutAux.getMemberUniverse(member) match
+        case L(method) =>
+          val mdef = fDefCtx(method.fid)
+          val symbolName = nameMangling(method.clsName, mdef.name)
+          val argsInstr = GetLocal(refName) +: // `this` pointer
+                          args.flatMap(arg => translateTrivialExpr(arg))
+          argsInstr ++ Ls(Call(symbolName), 
+                          Comment(s"call method ${member} of object ${refName}"))
+        case R(offset) => 
+          Ls(GetLocal(refName), I32Const(offset), I32Add, I32Load, 
+             Comment(s"select field ${member} of object ${refName}"))
+      
     case BasicOp(operator, args) =>
       val argsInstr = args flatMap {arg => translateTrivialExpr(arg)}
       val opInstr = operator match
@@ -155,7 +173,7 @@ class WasmBackend(
         case op => throw WasmBackendError(s"unknown operator ${op}")
       argsInstr :+ opInstr
     // Lambda and App is deprecated
-    case _ => throw WasmBackendError("deprecated GOExpr")
+    case expr @ _ => throw WasmBackendError(s"unsupported GOExpr $expr")
  
   protected def translateNode(node: GONode): Ls[MachineInstr] =
     def translateNodeRec(node: GONode, nestedBlocks: Int): Ls[MachineInstr] = node match
@@ -354,7 +372,8 @@ class WasmBackend(
     val ctorInstrs: ListBuffer[MachineInstr] = ListBuffer()
     // store expr values into linear memory
     rhs match
-      case CtorApp(cls, args) =>
+      case CtorApp(scls, args) =>
+        val cls = clsctx(scls.ident)
         val recordAux = RecordObj.from(clsctx, cls)
         val objSize = recordAux.size
         ctorInstrs ++= Ls(GetGlobal(0), SetLocal(bindName))
@@ -364,7 +383,7 @@ class WasmBackend(
         ctorInstrs ++= Ls(GetLocal(bindName), I32Const(cls.id), I32Store)
         
         val ctorF = getOrGenerateCtor(cls)
-        ctorInstrs ++= Ls(GetLocal(bindName), I32Const(RecordObj.tagSize), I32Add) // `this` pointer
+        ctorInstrs ++= Ls(GetLocal(bindName)) // `this` pointer
         ctorInstrs ++= args flatMap {
             arg => translateTrivialExpr(arg)
         }

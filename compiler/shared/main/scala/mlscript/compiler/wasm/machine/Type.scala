@@ -12,7 +12,6 @@ case class MethodInfo(
   clsName: Str,
   methodName: Str,
   fid: Int,
-  isCtor: Bool,
   isVirtual: Bool
 )
 
@@ -28,28 +27,54 @@ class RecordObj(
 
   lazy val vtable: Ls[(String, MethodInfo)] = buildVtable()
 
+  def containsField(name: Str): Bool =
+    // assume params, fields have no name conflict
+    fields.toMap.contains(name)
+  
+  def containsMethod(name: Str): Bool =
+    methods.contains(name)
+
+  def contains(name: Str): Bool =
+    containsField(name) || containsMethod(name)
+
+  def getMethod(name: Str): MethodInfo =
+    methods(name)
+
+  def getMemberUniverse(name: Str): MethodInfo \/ Int =
+    if containsMethod(name) then
+      L(getMethod(name))
+    else if containsField(name) then
+      R(getFieldOffset(name))
+    else
+      throw WasmBackendError(s"member $name does not exist in $this")
+
   def size: Int =
-    fields.size * RecordObj.defaultFieldSize
+    RecordObj.headerSize + fields.size * RecordObj.defaultFieldSize
 
   def getFieldOffset(name: String): Int =
     val index = fields.indexWhere { _._1 == name }
-    index * RecordObj.defaultFieldSize
+    RecordObj.headerSize + index * RecordObj.defaultFieldSize
   
   // ad hoc overload only for opaque record e.g. LetCall
   def getFieldOffset(index: Int) : Int =
-    index * RecordObj.defaultFieldSize
+    RecordObj.headerSize + index * RecordObj.defaultFieldSize
   
   def getParentOffet(name: Str): Int =
     // in our case class have at most 1 parent.
     // its members are decomposed into scalar and
     // placed at the beginning of the class
     0
+  
+  override def toString: String =
+    f"{fields: (${fields.toMap.keys.mkString(",")}), methods: (${methods.keys.mkString(",")})}\n"
 
 
 object RecordObj:
-  final val tagSize = 4
+  final val headerSize = 4
   final val defaultFieldSize = 4
   var recordCache = Map[Str, RecordObj]()
+
+  def clearCache(): Unit = recordCache = Map[Str, RecordObj]()
 
   private def collectField(clsctx: Map[Str, ClassInfo], cls: ClassInfo): Ls[(String, Type)] =
     def collectFieldRec(wcls: ClassInfo): Ls[Str] =
@@ -77,7 +102,6 @@ object RecordObj:
             name,
             mdef.id,
             false,
-            false
           )
       }
       val parents = wcls.parents.keys.toList flatMap {
