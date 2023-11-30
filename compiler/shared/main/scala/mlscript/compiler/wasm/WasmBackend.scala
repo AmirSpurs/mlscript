@@ -105,6 +105,22 @@ class WasmBackend(
 
   def nameMangling(clsName: Str, methodName: Str) =
     s"_Z${clsName}_${methodName}"
+  
+  protected def promoteMethod(cls: ClassInfo, mdef: GODef) =
+    val id = mdef.id
+    val name = mdef.name
+    val isjp = mdef.isjp
+    val params = mdef.params
+    val resultNum = mdef.resultNum
+    val body = mdef.body
+    GODef(
+      id,
+      nameMangling(cls.ident, name),
+      false,
+      Name("this") +: params,
+      resultNum,
+      body
+    )
 
   protected def preprocess(goprog: GOProgram): Unit =
     val classes = goprog.classes
@@ -112,8 +128,10 @@ class WasmBackend(
     this.clsctx = this.clsctx ++ classes.map(cls => (cls.ident -> cls)).toMap
     this.fDefCtx = this.fDefCtx ++ defs.map(fdef => (fdef.id -> fdef)).toMap
     // promote methods
-    val methods = classes.flatMap { cls => cls.methods.values }
-    this.fDefCtx = this.fDefCtx ++ methods.map(mdef => (mdef.id -> mdef)).toMap
+
+    val methods = classes.toList.flatMap(
+      cls => cls.methods.values.map(mdef => promoteMethod(cls, mdef)))
+    this.fDefCtx = this.fDefCtx ++ methods.map(mdef => (mdef.id -> mdef))
 
     val main = GODef(
       -1, // invalid id
@@ -154,7 +172,7 @@ class WasmBackend(
       layoutAux.getMemberUniverse(member) match
         case L(method) =>
           val mdef = fDefCtx(method.fid)
-          val symbolName = nameMangling(method.clsName, mdef.name)
+          val symbolName = mdef.name
           val argsInstr = GetLocal(refName) +: // `this` pointer
                           args.flatMap(arg => translateTrivialExpr(arg))
           argsInstr ++ Ls(Call(symbolName), 
