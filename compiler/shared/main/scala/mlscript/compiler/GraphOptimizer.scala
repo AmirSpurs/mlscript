@@ -24,26 +24,26 @@ class GraphOptimizer:
   import GONode._
 
   private val counter = MutHMap[Str, Int]()
-  private def gensym(s: Str = "x") = {
+  def gensym(s: Str = "x") = {
     val count = counter.getOrElse(s, 0)
     val ts = s.split("%")(0)
     val tmp = s"$s%$count"
     counter.update(s, count + 1)
     Name(tmp)
   }
-  private def rmsym(s: Str = "x") = {
+  def rmsym(s: Str = "x") = {
     counter.remove(s)
   }
 
   private var fid = 0
-  private def genfid() = {
+  def genfid() = {
     val tmp = fid
     fid += 1
     tmp
   }
 
   private var cid = 0
-  private def gencid() = {
+  def gencid() = {
     val tmp = cid
     cid += 1
     tmp
@@ -340,7 +340,15 @@ class GraphOptimizer:
         name -> None
       case App(Var(name), xs @ Tup(_)) if name.isCapitalized =>
         // parent constructor body node
-        val pcb = buildResultFromTerm(xs) { x => x }
+        val pcb = buildResultFromTerm(xs) {
+          case res @ Result(args) =>
+            val pcls = sclsctx(name)
+            if args.size != pcls.fields.size then
+              throw GraphOptimizingError(f"unmatched constructor $tm with class $pcls")
+            else
+              res
+          case node => node |> unexpected_node
+        }
         name -> S(pcb)
       case term => term |> unexpected_term
 
@@ -354,7 +362,7 @@ class GraphOptimizer:
 
       case x @ _ => throw GraphOptimizingError(f"unsupported class field $x")
 
-  // general handler of class methods
+  // general handler of common class methods
   private def updateClassInfoMethodsUniverse
     (using ctx: Ctx, sclsctx: ClassCtx, fldctx: FieldCtx, fnctx: FnCtx, opctx: OpCtx)
     (nfd: Statement) = nfd match
