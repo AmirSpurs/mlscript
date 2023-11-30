@@ -8,9 +8,6 @@ import mlscript.utils.shorthands.*
 import mlscript.*
 
 import collection.mutable.{Map => MutMap, Set => MutSet, ListBuffer}
-import scala.annotation.meta.field
-import mlscript.JSCodeHelpers.param
-import scala.concurrent.ExecutionContext.parasitic
 
 
 final case class WasmBackendError(message: String) extends Exception(message)
@@ -22,17 +19,24 @@ class WasmBackend(
 ):
   import MachineInstr.*
   import GOExpr.*
-  import Node.*
+  import GONode.*
 
-  case class JoinPoint(params: Ls[Name], rhs: Node):
+  case class JoinPoint(
+    params: Ls[Name], 
+    rhs: GONode, 
+    needPassArg: Bool = true
+  ):
     def passArgs(args: Ls[TrivialExpr]): Ls[MachineInstr] =
-      val evalArgs = params.zip(args) flatMap {
-        case (Name(paramName), expr) =>
-          translateTrivialExpr(expr)
-          :+ SetLocal(paramName)
-          :+ Comment(s"set ${paramName}")
-      }
-      evalArgs
+      if needPassArg then
+        val evalArgs = params.zip(args) flatMap {
+          case (Name(paramName), expr) =>
+            translateTrivialExpr(expr)
+            :+ SetLocal(paramName)
+            :+ Comment(s"set ${paramName}")
+        }
+        evalArgs
+      else
+        Ls()
 
     def apply(): Ls[MachineInstr] =
       // store args in a local variable
@@ -72,7 +76,7 @@ class WasmBackend(
           BasicOp(op, args map inlineTrivialExpr)
         case _ => expr
 
-      def inlineNodeRec(node: Node): Node = node match
+      def inlineNodeRec(node: GONode): GONode = node match
         case Result(res) =>
           Result(res map inlineTrivialExpr)
         case Jump(joinName, args) =>
@@ -88,10 +92,38 @@ class WasmBackend(
           LetJoin(joinName, params map inlineRefName, rhs, body |> inlineNodeRec)
         case LetCall(resultNames, defn, args, body) =>
           LetCall(resultNames, defn, args map inlineTrivialExpr, body |> inlineNodeRec)
-
-  val functionMap: MutMap[Str, MachineFunction] = MutMap()
+  
   val joinPoints: MutMap[Str, JoinPoint] = MutMap()
-  val locals: MutSet[Str] = MutSet()
+  var locals: Set[Str] = Set()
+  // classinfo context
+  var clsctx: Map[Str, ClassInfo] = Map()
+  // top level def context
+  var fDefCtx: Map[Int, GODef] = Map()
+  // TODO: some functions are hard to encode in graph-ir,
+  // e.g. class constructors, we manully generate wasm code.
+  var blackMagicFnCtx: Map[Str, MachineFunction] = Map()
+
+  def nameMangling(clsName: Str, methodName: Str) =
+    s"_Z${clsName}_${methodName}"
+
+  protected def preprocess(goprog: GOProgram): Unit =
+    val classes = goprog.classes
+    val defs = goprog.defs
+    this.clsctx = this.clsctx ++ classes.map(cls => (cls.ident -> cls)).toMap
+    this.fDefCtx = this.fDefCtx ++ defs.map(fdef => (fdef.id -> fdef)).toMap
+    // promote methods
+    val methods = classes.flatMap { cls => cls.methods.values }
+    this.fDefCtx = this.fDefCtx ++ methods.map(mdef => (mdef.id -> mdef)).toMap
+
+    val main = GODef(
+      -1, // invalid id
+      "main",
+      false,
+      Ls(),
+      1, // return only one value (may be pointer)
+      goprog.main
+    )
+    this.fDefCtx = this.fDefCtx.updated(-1, main)
 
   protected def translateTrivialExprUnbox(expr: TrivialExpr) = expr match
     case Ref(Name(name)) => Ls(GetLocal(name), I32Load)
@@ -105,12 +137,12 @@ class WasmBackend(
       case IntLit(value) => Ls(I32Const(value.intValue))
       case _ => throw WasmBackendError(s"unsupported literal ${lit.toString()}!")
 
-  def translateExpr(expr: GOExpr): Ls[MachineInstr] = expr match
+  protected def translateExpr(expr: GOExpr): Ls[MachineInstr] = expr match
     case s: TrivialExpr => translateTrivialExpr(s)
     case CtorApp(cls, args) =>
       throw WasmBackendError(s"unexpected CtorApp handling for ${expr}")
     case Select(Name(refName), cls, field) =>
-      val recordAux = RecordObj.from(cls)
+      val recordAux = RecordObj.from(clsctx, cls)
       val offset = recordAux.getFieldOffset(field)
       Ls(GetLocal(refName), I32Const(offset), I32Add, I32Load)
     case BasicOp(operator, args) =>
@@ -125,10 +157,10 @@ class WasmBackend(
     // Lambda and App is deprecated
     case _ => throw WasmBackendError("deprecated GOExpr")
  
-  def translateNode(node: Node): Ls[MachineInstr] =
-    def translateNodeRec(node: Node, nestedBlocks: Int): Ls[MachineInstr] = node match
+  protected def translateNode(node: GONode): Ls[MachineInstr] =
+    def translateNodeRec(node: GONode, nestedBlocks: Int): Ls[MachineInstr] = node match
       case LetExpr(Name(name), expr, body) =>
-        locals += name
+        this.locals = this.locals + name
         val exprInstr = allocate(name, expr)
         exprInstr ++ translateNodeRec(body, nestedBlocks)
       case LetJoin(Name(name), params, rhs, body) =>
@@ -144,7 +176,7 @@ class WasmBackend(
         buffer.toList
 
       case LetCall(resultNames, defnRef, args, body) =>
-        locals ++= resultNames.map(resultName => resultName.str)
+        this.locals = this.locals ++ resultNames.map(resultName => resultName.str)
         // leftmost param in the bottom
         val argsInstr = args flatMap {arg => translateTrivialExpr(arg)}
         val calleeName = defnRef.getName
@@ -195,7 +227,7 @@ class WasmBackend(
         val joinName = defnRef.getName
         val joinPoint = joinPoints.getOrElse(joinName, 
                                              throw WasmBackendError(s"join point ${joinName} not found"))
-        locals ++= joinPoint.params.map { paramName => paramName.str }
+        this.locals = this.locals ++ joinPoint.params.map { paramName => paramName.str }
         joinPoint.passArgs(args) :+ Br(nestedBlocks)
         
       case Result(res) =>
@@ -208,7 +240,7 @@ class WasmBackend(
   // translate GODef to a function.
   // after optimization, some join point will be lifted to a GODef,
   // but we should just treat it as a basic block
-  def translateGODefs(godef: GODef): Either[MachineFunction, JoinPoint] =
+  protected def translateGODefs(godef: GODef): Either[MachineFunction, JoinPoint] =
     val name = godef.name
     
     if godef.isjp then
@@ -216,7 +248,7 @@ class WasmBackend(
       joinPoints += name -> jp
       Right(jp)
     else 
-      locals.clear()
+      this.locals = Set()
       val body = translateNode(godef.body)
       val paramsType = godef.params map { case Name(param) => param -> MachineType.defaultNumType}
       // local info collect when codegen
@@ -233,55 +265,111 @@ class WasmBackend(
 
   // entry of lowering graph ir to wasm module
   def translate(goprog: GOProgram, moduleName: Str): Module =
-    val main = GODef(
-      -1, // invalid id
-      "main",
-      false,
-      Ls(),
-      1, // return only one value (may be pointer)
-      goprog.main
-    )
-    val defn = goprog.defs.toList :+ main
-    val functions = defn collect {godef =>
+    preprocess(goprog)
+    val functions = fDefCtx.values.toList collect {godef =>
       translateGODefs(godef) match
         case Left(function) => function
     }
+    val synthFunctions = blackMagicFnCtx.values.toList
 
     // name `Module` shadows Module in java.lang
     wasm.Module(
       moduleName,
       List(), // empty imports
-      functions
+      functions ++ synthFunctions
     )
+  
+  private def getOrGenerateCtor(cls: ClassInfo): MachineFunction =
+    val ctorName = nameMangling(cls.ident, "constructor")
+    if blackMagicFnCtx.contains(ctorName) then
+      blackMagicFnCtx(ctorName)
+    else 
+      val bkupLocals = this.locals
+      this.locals = Set()
+
+      val params = cls.fields
+      val fields = cls.members
+      val parents = cls.parents
+
+      val layoutAux = RecordObj.from(clsctx, cls)
+      val instrs = ListBuffer[MachineInstr]()
+      // construct parent
+      val pc = parents flatMap {
+        case (name, ctor) => 
+          val pcls = clsctx(name)
+          val poffset = layoutAux.getParentOffet(pcls.ident)
+          val pthis = Ls(GetLocal("this"), I32Const(poffset), I32Add)
+          val pargs = ctor match
+            case S(argNode) => translateNode(argNode)
+            case None => Ls()
+          val pctorName = nameMangling(name, "constructor")
+          val pctor = getOrGenerateCtor(pcls)
+          pthis ++ pargs ++ Ls(Call(pctorName), Comment(f"ctor parent ${pcls.ident}"))
+      }
+      // store params
+      val paramc = params flatMap { paramName =>
+        Ls(
+          GetLocal("this"),
+          I32Const(layoutAux.getFieldOffset(paramName)),
+          I32Add,
+          GetLocal(paramName),
+          I32Store,
+          Comment(s"set param ${paramName}")
+        )
+      }
+
+      val fc = fields flatMap { case (fieldName, initNode) =>
+        Ls(
+          GetLocal("this"),
+          I32Const(layoutAux.getFieldOffset(fieldName)),
+          I32Add, 
+        ) ++
+        translateNode(initNode) ++
+        Ls(
+          I32Store,
+          Comment(s"set field ${fieldName}")
+        )
+      }
+
+      val paramsType = ("this" +: params) map { param => param -> MachineType.defaultNumType}
+      // local info collect when codegen
+      val localsType = locals.toList map {local => local -> MachineType.defaultNumType}
+      val retType = Ls()
+      val machineF = MachineFunction(
+        ctorName,
+        paramsType,
+        localsType,
+        retType,
+        (pc ++ paramc ++ fc).toList
+      )
+      this.blackMagicFnCtx = this.blackMagicFnCtx.updated(ctorName, machineF)
+      // TODO: use better way to recover locals
+      this.locals = bkupLocals
+      machineF
 
   // We treat Wasm memory as a linear memory pool,
   // each time we allocate a class, we move forward the memory pointer (a global variable)
-  def allocate(bindName: Str, rhs: GOExpr): Ls[MachineInstr] =
+  private def allocate(bindName: Str, rhs: GOExpr): Ls[MachineInstr] =
     // Debug only
     val ctorInstrs: ListBuffer[MachineInstr] = ListBuffer()
     // store expr values into linear memory
     rhs match
       case CtorApp(cls, args) =>
-        val recordAux = RecordObj.from(cls)
+        val recordAux = RecordObj.from(clsctx, cls)
         val objSize = recordAux.size
         ctorInstrs ++= Ls(GetGlobal(0), SetLocal(bindName))
         ctorInstrs ++= Ls(GetGlobal(0), I32Const(objSize), I32Add, SetGlobal(0))
         ctorInstrs += Comment(s"allocate ${objSize} bytes for ${bindName}")
         // class id
         ctorInstrs ++= Ls(GetLocal(bindName), I32Const(cls.id), I32Store)
-        // store fields
-        args.zip(cls.fields) foreach { case(arg, fieldName) =>
-          ctorInstrs ++= Ls(
-            GetLocal(bindName),
-            I32Const(recordAux.getFieldOffset(fieldName)),
-            I32Add,
-          )
-          ctorInstrs ++= translateTrivialExpr(arg)
-          ctorInstrs ++= Ls(
-            I32Store,
-            Comment(s"field ${fieldName}")
-          )
+        
+        val ctorF = getOrGenerateCtor(cls)
+        ctorInstrs ++= Ls(GetLocal(bindName), I32Const(RecordObj.tagSize), I32Add) // `this` pointer
+        ctorInstrs ++= args flatMap {
+            arg => translateTrivialExpr(arg)
         }
+        ctorInstrs += Call(ctorF.name)
+
         ctorInstrs += Comment(s"CtorApp ${cls.ident}")
       case _ =>
         ctorInstrs ++= translateExpr(rhs)

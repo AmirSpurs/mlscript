@@ -6,32 +6,102 @@ import mlscript.utils.shorthands.*
 
 import scala.collection.BitSet
 import scala.collection.immutable.{List, Map, VectorMap}
+import scala.collection.mutable.ListBuffer
+
+case class MethodInfo(
+  clsName: Str,
+  methodName: Str,
+  fid: Int,
+  isCtor: Bool,
+  isVirtual: Bool
+)
 
 // mlscript class is encoded as a record with some field
-class RecordObj(val fields: Ls[(String, Type)]):
+// handle memory layout
+class RecordObj(
+  fields: Ls[(String, Type)], 
+  methods: Map[String, MethodInfo]
+):
   def apply(name: String): Option[Type] = ???
 
+  def buildVtable() = ???
+
+  lazy val vtable: Ls[(String, MethodInfo)] = buildVtable()
+
   def size: Int =
-    RecordObj.tagSize + fields.size * RecordObj.defaultFieldSize
+    fields.size * RecordObj.defaultFieldSize
 
   def getFieldOffset(name: String): Int =
     val index = fields.indexWhere { _._1 == name }
-    RecordObj.tagSize + index * RecordObj.defaultFieldSize
+    index * RecordObj.defaultFieldSize
   
   // ad hoc overload only for opaque record e.g. LetCall
   def getFieldOffset(index: Int) : Int =
-    RecordObj.tagSize + index * RecordObj.defaultFieldSize
+    index * RecordObj.defaultFieldSize
+  
+  def getParentOffet(name: Str): Int =
+    // in our case class have at most 1 parent.
+    // its members are decomposed into scalar and
+    // placed at the beginning of the class
+    0
 
 
 object RecordObj:
   final val tagSize = 4
   final val defaultFieldSize = 4
-  def from(classinfo: ClassInfo) =
-    val fields = classinfo.fields.map { name => (name -> Type.defaultNumType)}
-    RecordObj(fields)
+  var recordCache = Map[Str, RecordObj]()
+
+  private def collectField(clsctx: Map[Str, ClassInfo], cls: ClassInfo): Ls[(String, Type)] =
+    def collectFieldRec(wcls: ClassInfo): Ls[Str] =
+      val params = wcls.fields
+      val fields = wcls.members.keys.toList
+      val parents = wcls.parents.keys.toList flatMap { 
+        pname =>
+          val pcls = clsctx(pname)
+          collectFieldRec(pcls)
+      }
+      parents ++ params ++ fields
+    val fieldNames = collectFieldRec(cls)
+    val numFields = fieldNames.size
+    fieldNames.zip(List.fill(numFields)(Type.defaultNumType))
+
+  private def collectMethod(clsctx: Map[Str, ClassInfo], cls: ClassInfo) =
+    def collectMethodRec(wcls: ClassInfo): Ls[(Str, MethodInfo)] =
+      // scala's default duplicate handling policy shows
+      // duplicate keys will be overwritten by later keys
+      val methods = wcls.methods.toList map {
+        case (name, mdef) =>
+          name ->
+          MethodInfo(
+            wcls.ident,
+            name,
+            mdef.id,
+            false,
+            false
+          )
+      }
+      val parents = wcls.parents.keys.toList flatMap {
+        pname =>
+          val pcls = clsctx(pname)
+          collectMethodRec(pcls)
+      }
+      parents ++ methods
+    collectMethodRec(cls).toMap
+
+
+  def from(clsctx: Map[Str, ClassInfo], cls: ClassInfo) =
+    if recordCache.contains(cls.ident) then
+      recordCache(cls.ident)
+    else
+      val fieldsLayout = collectField(clsctx, cls)
+      val methodLayout = collectMethod(clsctx, cls)
+      val layoutAux = RecordObj(fieldsLayout, methodLayout)
+      recordCache = recordCache.updated(cls.ident, layoutAux)
+      layoutAux
+
   def opaque(numFields: Int) =
     val fields = List.range(0, numFields) map { index => (index.toString() -> Type.defaultNumType)}
-    RecordObj(fields)
+    RecordObj(fields, Map[String, MethodInfo]())
 
 class VariantObj(val variants: Map[String, Option[Type.Record]]):
   def apply(name: String): Option[Option[Type.Record]] = variants.get(name)
@@ -57,11 +127,6 @@ enum Type:
   case Float32 extends Type, ValueType
   case Float64 extends Type, ValueType
   case Record(impl: ClassInfo)
-
-  def size: Int = this match
-    case (Int32 | Float32) => 4
-    case (Int64 | Float64) => 8
-    case Record(cls) => RecordObj.from(cls).size
 
   override def toString(): String = show
 
