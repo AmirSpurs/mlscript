@@ -1,0 +1,307 @@
+:NewParser
+:ParseOnly
+
+
+:GraphOpt
+class A(t, val s) {
+  val y = 10
+  let z = 10
+}
+A.y
+//│ |#class| |A|(|t|,| |#val| |s|)| |{|→|#val| |y| |#=| |10|↵|#let| |z| |#=| |10|←|↵|}|↵|A|.y|
+//│ Parsed: {class A(t, val s,) {let y = 10; let z = 10}; (A).y}
+//│ 
+//│ 
+//│ GraphOpt:
+//│ 
+//│ GraphOpt failed: unsupported field
+//│ 
+//│ mlscript.compiler.GraphOptimizingError$.apply(GraphOptimizer.scala:14)
+//│ mlscript.compiler.GraphOptimizer.getClassInfo$$anonfun$2(GraphOptimizer.scala:324)
+//│ scala.collection.immutable.List.map(List.scala:250)
+//│ mlscript.compiler.GraphOptimizer.getClassInfo(GraphOptimizer.scala:325)
+//│ mlscript.compiler.GraphOptimizer.$anonfun$33(GraphOptimizer.scala:459)
+//│ scala.collection.immutable.List.map(List.scala:246)
+//│ mlscript.compiler.GraphOptimizer.buildGraph(GraphOptimizer.scala:459)
+//│ mlscript.compiler.DiffTestCompiler.postProcess2(Test.scala:27)
+//│ mlscript.DiffTests.rec$1(DiffTests.scala:440)
+//│ mlscript.DiffTests.$anonfun$new$3(DiffTests.scala:1069)
+//│ org.scalatest.OutcomeOf.outcomeOf(OutcomeOf.scala:85)
+//│ org.scalatest.OutcomeOf.outcomeOf$(OutcomeOf.scala:83)
+//│ org.scalatest.OutcomeOf$.outcomeOf(OutcomeOf.scala:104)
+//│ org.scalatest.Transformer.apply(Transformer.scala:22)
+//│ org.scalatest.Transformer.apply(Transformer.scala:20)
+//│ org.scalatest.funsuite.AnyFunSuiteLike$$anon$1.apply(AnyFunSuiteLike.scala:226)
+//│ org.scalatest.TestSuite.withFixture(TestSuite.scala:196)
+//│ org.scalatest.TestSuite.withFixture$(TestSuite.scala:195)
+//│ mlscript.DiffTests.org$scalatest$concurrent$TimeLimitedTests$$super$withFixture(DiffTests.scala:47)
+//│ org.scalatest.concurrent.TimeLimitedTests.$anonfun$withFixture$3(TimeLimitedTests.scala:154)
+//│ org.scalatest.enablers.Timed$$anon$1.timeoutAfter(Timed.scala:127)
+//│ org.scalatest.concurrent.TimeLimits$.failAfterImpl(TimeLimits.scala:282)
+//│ org.scalatest.concurrent.TimeLimitedTests.withFixture(TimeLimitedTests.scala:153)
+//│ org.scalatest.concurrent.TimeLimitedTests.withFixture$(TimeLimitedTests.scala:150)
+//│ mlscript.DiffTests.withFixture(DiffTests.scala:47)
+//│ org.scalatest.funsuite.AnyFunSuiteLike.invokeWithFixture$1(AnyFunSuiteLike.scala:224)
+//│ org.scalatest.funsuite.AnyFunSuiteLike.$anonfun$runTest$1(AnyFunSuiteLike.scala:236)
+//│ org.scalatest.SuperEngine.runTestImpl(Engine.scala:306)
+//│ org.scalatest.funsuite.AnyFunSuiteLike.runTest(AnyFunSuiteLike.scala:236)
+//│ org.scalatest.funsuite.AnyFunSuiteLike.runTest$(AnyFunSuiteLike.scala:218)
+//│ mlscript.DiffTests.org$scalatest$OneInstancePerTest$$super$runTest(DiffTests.scala:47)
+//│ org.scalatest.OneInstancePerTest.runTest(OneInstancePerTest.scala:131)
+//│ org.scalatest.OneInstancePerTest.runTest$(OneInstancePerTest.scala:123)
+//│ mlscript.DiffTests.org$scalatest$ParallelTestExecution$$super$runTest(DiffTests.scala:47)
+//│ org.scalatest.ParallelTestExecution.runTest(ParallelTestExecution.scala:164)
+//│ org.scalatest.ParallelTestExecution.runTest$(ParallelTestExecution.scala:148)
+//│ mlscript.DiffTests.runTest(DiffTests.scala:47)
+//│ org.scalatest.OneInstancePerTest.runTests(OneInstancePerTest.scala:181)
+//│ org.scalatest.OneInstancePerTest.runTests$(OneInstancePerTest.scala:172)
+//│ mlscript.DiffTests.org$scalatest$ParallelTestExecution$$super$runTests(DiffTests.scala:47)
+//│ org.scalatest.ParallelTestExecution.runTests(ParallelTestExecution.scala:97)
+//│ org.scalatest.ParallelTestExecution.runTests$(ParallelTestExecution.scala:79)
+//│ mlscript.DiffTests.runTests(DiffTests.scala:47)
+//│ org.scalatest.Suite.run(Suite.scala:1114)
+//│ org.scalatest.Suite.run$(Suite.scala:1096)
+//│ org.scalatest.funsuite.AnyFunSuite.org$scalatest$funsuite$AnyFunSuiteLike$$super$run(AnyFunSuite.scala:1563)
+//│ org.scalatest.funsuite.AnyFunSuiteLike.$anonfun$run$1(AnyFunSuiteLike.scala:273)
+//│ org.scalatest.SuperEngine.runImpl(Engine.scala:535)
+//│ org.scalatest.funsuite.AnyFunSuiteLike.run(AnyFunSuiteLike.scala:273)
+//│ org.scalatest.funsuite.AnyFunSuiteLike.run$(AnyFunSuiteLike.scala:272)
+//│ mlscript.DiffTests.org$scalatest$ParallelTestExecution$$super$run(DiffTests.scala:47)
+//│ org.scalatest.ParallelTestExecution.run(ParallelTestExecution.scala:261)
+//│ org.scalatest.ParallelTestExecution.run$(ParallelTestExecution.scala:258)
+//│ mlscript.DiffTests.run(DiffTests.scala:47)
+//│ org.scalatest.tools.DistributedTestRunnerSuite.run(DistributedTestRunnerSuite.scala:22)
+//│ org.scalatest.tools.SuiteRunner.run(SuiteRunner.scala:47)
+//│ java.base/java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:515)
+//│ java.base/java.util.concurrent.FutureTask.run(FutureTask.java:264)
+//│ java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1130)
+//│ java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:630)
+//│ java.base/java.lang.Thread.run(Thread.java:832)
+//│ mlscript.compiler.DiffTestCompiler$outputBuilder$2$@ffff193
+
+A.x
+//│ |A|.x|
+//│ Parsed: {(A).x}
+//│ mlscript.compiler.DiffTestCompiler$outputBuilder$2$@55313ac
+
+:GraphOpt
+class True
+class False
+class A {
+    val field = 1
+}
+class B {
+}
+fun sum(n) = if n == 0 then 0 else n+ sum(n - 1)
+sum(2)
+//│ |#class| |True|↵|#class| |False|↵|#class| |A| |{|→|#val| |field| |#=| |1|←|↵|}|↵|#class| |B| |{|↵|}|↵|#fun| |sum|(|n|)| |#=| |#if| |n| |==| |0| |#then| |0| |#else| |n|+| |sum|(|n| |-| |1|)|↵|sum|(|2|)|
+//│ Parsed: {class True {}; class False {}; class A {let field = 1}; class B {}; fun sum = (n,) => if (==(n,)(0,)) then 0 else +(n,)(sum(-(n,)(1,),),); sum(2,)}
+//│ 
+//│ 
+//│ GraphOpt:
+//│ 
+//│ CLS Map(True -> ClassInfo(0, True, []) [] {
+//│ }, False -> ClassInfo(1, False, []) [] {
+//│ }, A -> ClassInfo(2, A, []) [] {
+//│ }, B -> ClassInfo(3, B, []) [] {
+//│ })
+//│ GOProgram({ClassInfo(0, True, []) [] {
+//│ }
+//│ ClassInfo(1, False, []) [] {
+//│ }
+//│ ClassInfo(2, A, []) [field] {
+//│ }
+//│ ClassInfo(3, B, []) [] {
+//│ }
+//│ }, {
+//│ Def(0, sum, [n%0], [{}], 
+//│ [None], 1, 
+//│ let x%0 = ==(n%0,0)
+//│   in let join j%0(x%4) = x%4
+//│     in if x%0
+//│       true => jump j%0(0)
+//│       false => let x%1 = -(n%0,1)
+//│         in let* (x%2) = sum(x%1)
+//│           in let x%3 = +(n%0,x%2)
+//│             in jump j%0(x%3)
+//│ )
+//│ },
+//│ let* (x%5) = sum(2)
+//│   in x%5)
+//│ 
+//│ 
+//│ Effect ------------------------------------
+//│ 
+//│ GOProgram({ClassInfo(0, True, []) [] {
+//│ }
+//│ ClassInfo(1, False, []) [] {
+//│ }
+//│ ClassInfo(2, A, []) [field] {
+//│ }
+//│ ClassInfo(3, B, []) [] {
+//│ }
+//│ ClassInfo(4, StackDelay, []) [] {
+//│ }
+//│ ClassInfo(5, Cont, []) [] {
+//│ }
+//│ }, {
+//│ Def(0, sum, [n%0], [{}], 
+//│ [None], 1, 
+//│ let join e%1(e%2) = e%2
+//│   in let e%0 = <(500,stackSzie)
+//│     in if e%0
+//│       true => jump e%1(StackDelay)
+//│       false => let x%0 = ==(n%0,0)
+//│         in let join j%0(x%4) = x%4
+//│           in if x%0
+//│             true => jump j%0(0)
+//│             false => let x%1 = -(n%0,1)
+//│               in let* (x%2) = sum(x%1)
+//│                 in let join e%4(e%5) = e%5
+//│                   in case x%2 of
+//│                     StackDelay => jump e%4(handle)
+//│                     _ => let x%3 = +(n%0,x%2)
+//│                       in jump j%0(x%3)
+//│ )
+//│ },
+//│ let* (x%5) = sum(2)
+//│   in let join e%7(e%8) = e%8
+//│     in case x%5 of
+//│       StackDelay => jump e%7(handle)
+//│       _ => x%5)
+//│ 
+//│ 
+//│ mlscript.compiler.DiffTestCompiler$outputBuilder$2$@38eb28e
+
+
+
+
+:GraphOpt
+class True
+class False
+fun sum (n) = if n == 0 then 0 else n + sum(n - 1)
+sum(2)
+//│ |#class| |True|↵|#class| |False|↵|#fun| |sum| |(|n|)| |#=| |#if| |n| |==| |0| |#then| |0| |#else| |n| |+| |sum|(|n| |-| |1|)|↵|sum|(|2|)|
+//│ Parsed: {class True {}; class False {}; fun sum = (n,) => if (==(n,)(0,)) then 0 else +(n,)(sum(-(n,)(1,),),); sum(2,)}
+//│ 
+//│ 
+//│ GraphOpt:
+//│ 
+//│ CLS Map(True -> ClassInfo(0, True, []) [] {
+//│ }, False -> ClassInfo(1, False, []) [] {
+//│ })
+//│ GOProgram({ClassInfo(0, True, []) [] {
+//│ }
+//│ ClassInfo(1, False, []) [] {
+//│ }
+//│ }, {
+//│ Def(0, sum, [n%0], [{}], 
+//│ [None], 1, 
+//│ let x%0 = ==(n%0,0)
+//│   in let join j%0(x%4) = x%4
+//│     in if x%0
+//│       true => jump j%0(0)
+//│       false => let x%1 = -(n%0,1)
+//│         in let* (x%2) = sum(x%1)
+//│           in let x%3 = +(n%0,x%2)
+//│             in jump j%0(x%3)
+//│ )
+//│ },
+//│ let* (x%5) = sum(2)
+//│   in x%5)
+//│ 
+//│ 
+//│ Effect ------------------------------------
+//│ 
+//│ GOProgram({ClassInfo(0, True, []) [] {
+//│ }
+//│ ClassInfo(1, False, []) [] {
+//│ }
+//│ ClassInfo(2, StackDelay, []) [] {
+//│ }
+//│ ClassInfo(3, Cont, []) [] {
+//│ }
+//│ }, {
+//│ Def(0, sum, [n%0], [{}], 
+//│ [None], 1, 
+//│ let join e%1(e%2) = e%2
+//│   in let e%0 = <(500,stackSzie)
+//│     in if e%0
+//│       true => jump e%1(StackDelay)
+//│       false => let x%0 = ==(n%0,0)
+//│         in let join j%0(x%4) = x%4
+//│           in if x%0
+//│             true => jump j%0(0)
+//│             false => let x%1 = -(n%0,1)
+//│               in let* (x%2) = sum(x%1)
+//│                 in let join e%4(e%5) = e%5
+//│                   in case x%2 of
+//│                     StackDelay => jump e%4(handle)
+//│                     _ => let x%3 = +(n%0,x%2)
+//│                       in jump j%0(x%3)
+//│ )
+//│ },
+//│ let* (x%5) = sum(2)
+//│   in let join e%7(e%8) = e%8
+//│     in case x%5 of
+//│       StackDelay => jump e%7(handle)
+//│       _ => x%5)
+//│ 
+//│ 
+//│ mlscript.compiler.DiffTestCompiler$outputBuilder$2$@4e2953ff
+//
+
+
+
+
+
+:GraphOpt
+fun t() = 100 + t
+class True
+True
+//│ |#fun| |t|(||)| |#=| |100| |+| |t|↵|#class| |True|↵|True|
+//│ Parsed: {fun t = () => +(100,)(t,); class True {}; True}
+//│ 
+//│ 
+//│ GraphOpt:
+//│ 
+//│ CLS Map(True -> ClassInfo(0, True, []) [] {
+//│ })
+//│ GOProgram({ClassInfo(0, True, []) [] {
+//│ }
+//│ }, {
+//│ Def(0, t, [], [{}], 
+//│ [None], 1, 
+//│ let x%0 = +(100,t)
+//│   in x%0
+//│ )
+//│ },
+//│ let x%1 = True()
+//│   in x%1)
+//│ 
+//│ 
+//│ Effect ------------------------------------
+//│ 
+//│ GOProgram({ClassInfo(0, True, []) [] {
+//│ }
+//│ ClassInfo(1, StackDelay, []) [] {
+//│ }
+//│ ClassInfo(2, Cont, []) [] {
+//│ }
+//│ }, {
+//│ Def(0, t, [], [{}], 
+//│ [None], 1, 
+//│ let join e%1(e%2) = e%2
+//│   in let e%0 = <(500,stackSzie)
+//│     in if e%0
+//│       true => jump e%1(StackDelay)
+//│       false => let x%0 = +(100,t)
+//│         in x%0
+//│ )
+//│ },
+//│ let x%1 = True()
+//│   in x%1)
+//│ 
+//│ 
+//│ mlscript.compiler.DiffTestCompiler$outputBuilder$2$@56aa7a03
+
